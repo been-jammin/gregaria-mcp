@@ -15,6 +15,7 @@
 import { createMcpHandler, withMcpAuth } from "mcp-handler"
 import { registerTools } from "../../../lib/tools/index.js"
 import { API_KEY_PREFIX } from "../../../lib/intervals/client.js"
+import { ownerModeEnabled, ownerKeyFromRequest } from "../../../lib/owner-access.js"
 
 export const runtime = "nodejs"
 export const maxDuration = 60
@@ -28,6 +29,19 @@ const mcpHandler = createMcpHandler(
 // undefined = 401. No further validation is possible here: if the token/key is
 // invalid, Intervals.icu will reject it on the first real call (401 from their API).
 async function verifyToken(req, bearerToken) {
+  // Owner mode (MCP_ACCESS_SECRET set): single-user deployment. The Intervals.icu
+  // API key comes from the INTERVALS_API_KEY env var, and the only way in is the
+  // secret in the URL (?k=...). OAuth / Bearer are not accepted in this mode.
+  if (ownerModeEnabled()) {
+    const ownerKey = ownerKeyFromRequest(req)
+    if (!ownerKey) return undefined
+    return {
+      token: "owner",
+      clientId: undefined,
+      scopes: [],
+      extra: { apiKey: API_KEY_PREFIX + ownerKey },
+    }
+  }
   if (!bearerToken) return undefined
   const isApiKeyMode = new URL(req.url).searchParams.get("auth") === "apikey"
   return {
